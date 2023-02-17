@@ -18,6 +18,21 @@ project(rmw_connextdds_common)
 
 find_package(ament_cmake REQUIRED)
 
+option(CONNEXT_ENABLE_TRACING "Enable building with static tracepoints with LTTng." OFF)
+if(CONNEXT_ENABLE_TRACING AND CMAKE_SYSTEM_NAME MATCHES Linux)
+  find_package(PkgConfig)
+  if(PkgConfig_FOUND)
+    pkg_check_modules(LTTNG lttng-ust)
+    if(LTTNG_FOUND)
+      message(STATUS "Building with LTTng instrumentation support")
+      set(DDS_HAS_LTTNG_TRACING "1")
+    else()
+      message(FATAL_ERROR "CONNEXT_ENABLE_TRACING requires lttng-ust")
+    endif()
+  endif()
+endif()
+
+
 ################################################################################
 # rtirmw_add_library(
 #     NAME      <library name>
@@ -59,6 +74,10 @@ function(rtirmw_add_library)
         ${_rti_build_LIBRARIES}
         fastcdr)
 
+    if (DDS_HAS_LTTNG_TRACING)
+        target_link_libraries(${_rti_build_NAME} ${LTTNG_LIBRARIES})
+     endif()
+
     ament_target_dependencies(${_rti_build_NAME}
         ${_rti_build_DEPS})
 
@@ -87,7 +106,11 @@ function(rtirmw_add_library)
             CACHE INTERNAL "")
     endif()
 
-    target_compile_definitions(${_rti_build_NAME} PRIVATE ${private_defines})
+    target_compile_definitions(${_rti_build_NAME}
+	    PRIVATE
+	        ${private_defines} 
+	        DDS_HAS_LTTNG_TRACING=${DDS_HAS_LTTNG_TRACING}
+    )
 
     # Causes the visibility macros to use dllexport rather than dllimport,
     # which is appropriate when building the dll but not consuming it.
@@ -111,6 +134,7 @@ set(RMW_CONNEXT_DEPS
     rcpputils
     rmw
     rmw_dds_common
+    tracetools
     fastcdr
     rosidl_runtime_c
     rosidl_runtime_cpp
@@ -127,6 +151,7 @@ endforeach()
 ################################################################################
 # Common Source Configuration
 ################################################################################
+
 set(RMW_CONNEXT_DIR     ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(RMW_CONNEXT_COMMON_SOURCE_CPP
@@ -148,6 +173,7 @@ set(RMW_CONNEXT_COMMON_SOURCE_CPP
     src/common/rmw_subscription.cpp
     src/common/rmw_waitset.cpp
     src/common/rmw_type_support.cpp
+    $<$<BOOL:${CONNEXT_ENABLE_TRACING}>:src/common/tracing_lttng.c>
     src/common/demangle.cpp)
 
 set(RMW_CONNEXT_COMMON_SOURCE_HPP
@@ -170,6 +196,7 @@ set(RMW_CONNEXT_COMMON_SOURCE_HPP
 set(RMW_CONNEXT_COMMON_SOURCE
     ${RMW_CONNEXT_COMMON_SOURCE_CPP}
     ${RMW_CONNEXT_COMMON_SOURCE_HPP})
+
 
 ################################################################################
 # Check if additional Connext components are needed (e.g. security)

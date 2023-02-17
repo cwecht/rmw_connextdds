@@ -19,9 +19,13 @@
 #include <vector>
 #include <stdexcept>
 
+#include "tracetools/tracetools.h"
+
 #include "rmw_dds_common/time_utils.hpp"
 
 #include "rmw_connextdds/graph_cache.hpp"
+
+#include "rmw_connextdds/tracing_lttng.h"
 
 #define ROS_SERVICE_REQUESTER_PREFIX_STR "rq"
 #define ROS_SERVICE_RESPONSE_PREFIX_STR  "rr"
@@ -811,6 +815,8 @@ RMW_Connext_Publisher::create(
   scope_exit_topic_delete.cancel();
   scope_exit_dds_writer_delete.cancel();
 
+  TRACEPOINT_DDS(create_writer, dds_writer, topic_name, rmw_pub_impl->gid()->data);
+
   return rmw_pub_impl;
 }
 
@@ -1090,6 +1096,10 @@ rmw_connextdds_create_publisher(
     }
   }
 
+ TRACEPOINT(
+    rmw_publisher_init,
+    static_cast<const void *>(rmw_publisher),
+    rmw_pub_impl->gid()->data);
 
   scope_exit_rmw_writer_impl_delete.cancel();
   scope_exit_rmw_writer_delete.cancel();
@@ -1375,9 +1385,12 @@ RMW_Connext_Subscriber::create(
     RMW_CONNEXT_LOG_ERROR_SET("failed to allocate RMW subscriber")
     return nullptr;
   }
+
   scope_exit_dds_reader_delete.cancel();
   scope_exit_topic_delete.cancel();
   scope_exit_type_unregister.cancel();
+
+  TRACEPOINT_DDS(create_reader, dds_reader, topic_name, rmw_sub_impl->gid()->data);
 
   return rmw_sub_impl;
 }
@@ -1776,6 +1789,8 @@ RMW_Connext_Subscriber::take_next(
           rmw_connextdds_message_info_from_dds(message_info, info);
         }
 
+        TRACEPOINT_DDS(read, this->reader(), ros_message);
+
         *taken += 1;
         continue;
       }
@@ -1905,6 +1920,11 @@ rmw_connextdds_create_subscriber(
       return nullptr;
     }
   }
+
+  TRACEPOINT(
+    rmw_subscription_init,
+    static_cast<const void *>(rmw_subscriber),
+    rmw_sub_impl->gid()->data);
 
 #if RMW_CONNEXT_DEBUG && RMW_CONNEXT_DDS_API == RMW_CONNEXT_DDS_API_PRO
   scope_exit_enable_participant_on_error.cancel();

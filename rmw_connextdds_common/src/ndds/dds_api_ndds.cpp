@@ -23,6 +23,13 @@
 #include "rmw_connextdds/rmw_impl.hpp"
 #include "rmw_connextdds/graph_cache.hpp"
 
+#include "rmw_connextdds/tracing_lttng.h"
+
+static constexpr uint64_t C_NANOSECONDS_PER_SEC = 1000000000ULL;
+
+#define dds_time_to_u64(t_) \
+  ((C_NANOSECONDS_PER_SEC * (uint64_t)(t_)->sec) + (uint64_t)(t_)->nanosec)
+
 const char * const RMW_CONNEXTDDS_ID = "rmw_connextdds";
 const char * const RMW_CONNEXTDDS_SERIALIZATION_FORMAT = "cdr";
 
@@ -693,13 +700,21 @@ rmw_connextdds_write_message(
   RMW_Connext_Message * const message,
   int64_t * const sn_out)
 {
+
   if (pub->message_type_support()->type_requestreply() &&
     pub->message_type_support()->ctx()->request_reply_mapping ==
     RMW_Connext_RequestReplyMapping::Extended)
   {
+    DDS_WriteParams_t write_params = DDS_WRITEPARAMS_DEFAULT;
+    if (DDS_RETCODE_OK !=
+      DDS_DomainParticipant_get_current_time(pub->dds_participant(), &write_params.source_timestamp))
+    {
+      RMW_CONNEXT_LOG_ERROR_SET("failed to write message to DDS")
+      return RMW_RET_ERROR;
+    }
+
     const RMW_Connext_RequestReplyMessage * const rr_msg =
       reinterpret_cast<const RMW_Connext_RequestReplyMessage *>(message->user_data);
-    DDS_WriteParams_t write_params = DDS_WRITEPARAMS_DEFAULT;
 
     if (!rr_msg->request) {
       /* If this is a reply, propagate the request's sample identity
@@ -728,6 +743,7 @@ rmw_connextdds_write_message(
         "failed to write request/reply message to DDS")
       return RMW_RET_ERROR;
     }
+    TRACEPOINT_DDS(write, pub->writer(), message->user_data, dds_time_to_u64(&write_params.source_timestamp));
 
     if (rr_msg->request) {
       int64_t sn = 0;
@@ -742,13 +758,21 @@ rmw_connextdds_write_message(
     return RMW_RET_OK;
   }
 
+  DDS_Time_t source_timestamp;
   if (DDS_RETCODE_OK !=
-    DDS_DataWriter_write_untypedI(
-      pub->writer(), message, &DDS_HANDLE_NIL))
+    DDS_DomainParticipant_get_current_time(pub->dds_participant(), &source_timestamp))
   {
     RMW_CONNEXT_LOG_ERROR_SET("failed to write message to DDS")
     return RMW_RET_ERROR;
   }
+  if (DDS_RETCODE_OK !=
+    DDS_DataWriter_write_w_timestamp_untypedI(
+      pub->writer(), message, &DDS_HANDLE_NIL, &source_timestamp))
+  {
+    RMW_CONNEXT_LOG_ERROR_SET("failed to write message to DDS")
+    return RMW_RET_ERROR;
+  }
+  TRACEPOINT_DDS(write, pub->writer(), message->user_data, dds_time_to_u64(&source_timestamp));
 
   return RMW_RET_OK;
 }

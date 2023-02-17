@@ -17,6 +17,8 @@
 
 #include "rmw/validate_full_topic_name.h"
 
+#include "tracetools/tracetools.h"
+
 /******************************************************************************
  * Publication functions
  ******************************************************************************/
@@ -44,6 +46,8 @@ rmw_api_connextdds_publish(
 
   auto pub_impl = static_cast<RMW_Connext_Publisher *>(publisher->data);
   RMW_CHECK_ARGUMENT_FOR_NULL(pub_impl, RMW_RET_INVALID_ARGUMENT);
+
+  TRACEPOINT(rmw_publish, ros_message);
 
   return pub_impl->write(ros_message, false /* serialized */);
 }

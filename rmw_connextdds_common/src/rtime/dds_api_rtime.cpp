@@ -20,7 +20,11 @@
 #include "rmw_connextdds/rmw_impl.hpp"
 #include "rmw_connextdds/graph_cache.hpp"
 
+#include "rmw_connextdds/tracing_lttng.h"
+
 #include "rcutils/env.h"
+
+static constexpr uint64_t C_NANOSECONDS_PER_SEC = 1000000000ULL;
 
 struct RMW_Connext_BuiltinListener;
 
@@ -1147,6 +1151,9 @@ rmw_connextdds_create_datareader(
     sub, topic_desc, dr_qos, NULL, DDS_STATUS_MASK_NONE);
 }
 
+#define dds_time_to_u64(t_) \
+  ((C_NANOSECONDS_PER_SEC * (uint64_t)(t_)->sec) + (uint64_t)(t_)->nanosec)
+
 rmw_ret_t
 rmw_connextdds_write_message(
   RMW_Connext_Publisher * const pub,
@@ -1155,13 +1162,17 @@ rmw_connextdds_write_message(
 {
   UNUSED_ARG(sn_out);
 
+  DDS_Time_t source_timestamp;
+  DDS_DomainParticipant_get_current_time(pub->dds_participant(), &source_timestamp);
+  
   if (DDS_RETCODE_OK !=
-    DDS_DataWriter_write(pub->writer(), message, &DDS_HANDLE_NIL))
+    DDS_DataWriter_write_w_timestamp(pub->writer(), message, &DDS_HANDLE_NIL,  &source_timestamp))
   {
     RMW_CONNEXT_LOG_ERROR_SET("failed to write message to DDS")
     return RMW_RET_ERROR;
   }
 
+  TRACEPOINT_DDS(write, pub->writer(), message, dds_time_to_u64(&source_timestamp));
   return RMW_RET_OK;
 }
 
